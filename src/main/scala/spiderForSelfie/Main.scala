@@ -21,10 +21,10 @@ object Main {
     // needed for the future flatMap/onComplete in the end
     implicit val executionContext = system.dispatcher
 
-    System.setProperty("http.proxyHost", "localhost")
-    System.setProperty("http.proxyPort", "8888")
-    System.setProperty("https.proxyHost", "localhost")
-    System.setProperty("https.proxyPort", "8888")
+//    System.setProperty("http.proxyHost", "localhost")
+//    System.setProperty("http.proxyPort", "8888")
+//    System.setProperty("https.proxyHost", "localhost")
+//    System.setProperty("https.proxyPort", "8888")
 
     val spider = system.actorOf(Spider.props(), "Spider")
     spider ! Spider.Start

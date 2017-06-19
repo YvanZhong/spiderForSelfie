@@ -1,4 +1,4 @@
-name := "SpiderForSelfie"
+name := "spiderForSelfie"
 
 version := "0.1.4"
 

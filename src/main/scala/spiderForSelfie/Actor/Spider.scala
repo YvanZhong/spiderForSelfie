@@ -50,6 +50,25 @@ object Spider {
 
   case class QueryRsp(media: Media, status: String)
 
+  //new Query rsp
+  case class NewPageInfo(end_cursor: String, has_next_page: Boolean)
+  case class ToMedia(edges: List[Edge], page_info: NewPageInfo)
+
+  case class ToTopPost(edges: List[Edge])
+  case class ToComment(count: Int)
+  case class LikedBy(count: Int)
+  case class NewNode(id: String, thumbnail_src: String, edge_media_to_comment: ToComment, edge_liked_by: LikedBy)
+  case class Edge(node: NewNode)
+
+  case class ToContentAdvisory()
+
+  case class Hashtag(name: String, edge_hashtag_to_media: ToMedia, edge_hashtag_to_top_posts: ToTopPost, edge_hashtag_to_content_advisory: ToContentAdvisory)
+  case class QueryData(hashtag: Hashtag)
+  case class NewQueryRsp(data: QueryData, status: String)
+
+  case class AddNewNodes(nodes: List[NewNode], file: File)
+  //end new Query rsp
+
 //  case class QueryDetail(code: String)
   case object QueryDetail
 
@@ -76,6 +95,18 @@ object Spider {
   implicit val graphqlF = jsonFormat1(Graphql)
   implicit val queryDetailRspF = jsonFormat1(QueryDetailRsp)
 
+
+  implicit val newPageInfoF = jsonFormat2(NewPageInfo)
+  implicit val toContentAdvisoryF = jsonFormat0(ToContentAdvisory)
+  implicit val likedByF = jsonFormat1(LikedBy)
+  implicit val toCommentF = jsonFormat1(ToComment)
+  implicit val newNodeF = jsonFormat4(NewNode)
+  implicit val edgeF = jsonFormat1(Edge)
+  implicit val toMediaF = jsonFormat2(ToMedia)
+  implicit val toTopPostF = jsonFormat1(ToTopPost)
+  implicit val hashtagF = jsonFormat4(Hashtag)
+  implicit val queryDataF = jsonFormat1(QueryData)
+  implicit val newQueryRspF = jsonFormat2(NewQueryRsp)
 }
 
 class Spider extends Actor {
@@ -135,10 +166,11 @@ class Spider extends Actor {
                 //println("headers:")
                 //rsp.headers.foreach(println)
 
-                //println("cookies:")
-                //            cookies.foreach{
-                //              println
-                //            }
+                log.debug("cookies:")
+                            cookies.foreach{
+                              c =>
+                              log.debug(c.toString())
+                            }
                 val pattern =
                 """"end_cursor.*"""".r
                 val findRst = pattern.findFirstIn(bodyStr)
@@ -220,8 +252,9 @@ class Spider extends Actor {
       )
 
       //https://www.instagram.com/query/
-      val uri = "https://www.instagram.com/query/" // "http://localhost:8888"
+//      val uri = "https://www.instagram.com/query/" // "http://localhost:8888"
       //val uri = "http://localhost:8888"
+      /*
       http.singleRequest(HttpRequest(method = HttpMethods.POST, uri = uri, entity = entity(msg.p)).withHeaders(headers)).onComplete {
         case Success(rsp) =>
           try {
@@ -262,9 +295,55 @@ class Spider extends Actor {
           log.debug(s"Query failure: $e")
           e.printStackTrace()
           selfRef ! GetHomePage
+      }*/
+
+      //update
+      val queryId = "17882293912014529"
+      val after=msg.p
+      val uri = s"https://www.instagram.com/graphql/query/?query_id=$queryId&tag_name=selfie&first=9&after=$after"
+      http.singleRequest(HttpRequest(uri = uri).withHeaders(headers)).onComplete {
+        case Success(rsp) =>
+          try {
+            rsp.entity.dataBytes.runFold(ByteString(""))(_ ++ _).foreach { body =>
+              //log.info("Got response, body: " + bodyStr)
+              try {
+                val bodyStr = body.utf8String
+                val json = bodyStr.parseJson
+                val queryRsp = jsonReader(newQueryRspF).read(json)
+                log.debug(s"queryRsp: $queryRsp")
+                selfRef ! Query(queryRsp.data.hashtag.edge_hashtag_to_media.page_info.end_cursor, msg.cookies, msg.file)
+                val time = System.currentTimeMillis() / 1000
+                selfRef ! AddNewNodes(queryRsp.data.hashtag.edge_hashtag_to_media.edges.map {
+                  n =>
+                    n.node
+                }, msg.file)
+
+              } catch {
+                case e: Exception =>
+                  log.debug(s"Query json parse exception: $e")
+                  selfRef ! GetHomePage
+              }
+
+              //            val pattern = """^"end_cursor.*"$""".r
+              //            pattern.findFirstIn(bodyStr).foreach{
+              //              s =>
+              //                selfRef ! Query(s.split(":").last)
+              //            }
+
+            }
+          } catch {
+            case e: Exception =>
+              log.debug(s"Query rsp.entity.dataBytes exception: $e")
+              context.system.scheduler.scheduleOnce(30.seconds, selfRef, GetHomePage)
+          }
+
+        case Failure(e) =>
+          log.debug(s"Query failure: $e")
+          e.printStackTrace()
+          selfRef ! GetHomePage
       }
 
-    case msg: AddNodes =>
+        case msg: AddNodes =>
       log.debug(s"$logPrefix I got AddNodes: ${msg.nodes.length}")
       nodeList +:= (msg.nodes, msg.file)
       selfRef ! QueryDetail
